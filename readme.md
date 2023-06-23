@@ -19,8 +19,9 @@ This Flask App allows you to upload your personal PDFs, chat with your documents
 4. Create a new pinecone account/index/ and API key
    1. Visit the pincone website and create an account.
    2. Obtain an API key.
-   3. Create a new index called "my-knowledgebase" with 1536 dimmensions.
+   3. Create a new index called "my-knowledgebase" with 1536 dimensions.
    4. Set the environment variable PINECONE_API_KEY to your API Key.
+   5. Alter the application.py pinecone.init to reflect your pinecone environment. 
 
 ## Getting Started
 1. Run the Flask application: application.py.run()
