@@ -17,22 +17,33 @@
         }
 
         .input-section textarea {
-            width: 100%;
+            width: 150%;
             height: 100px;
             padding: 20px;
             border: 1px solid #ccc;
             border-radius: 5px;
         }
 
+        .input-section {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            margin-top: 20px;
+        }
+
         .btn-primary[disabled] {
             opacity: 0.5;
             cursor: not-allowed;
         }
+
+        .output-section {
+            margin-top: 20px;
+        }
     </style>
 
     <div class="container">
-        <form>
-            <div class="form-group">
+        <form id="summarize-form">
+            <div class="form-group" style="margin-bottom: 20px;">
                 <label for="file-selector" class="file-selector-label">Select a File to Summarize:</label>
                 <select class="form-select" id="file-selector" aria-label="File selector" onchange="toggleButton()">
                     <option selected disabled>Select File</option>
@@ -42,17 +53,49 @@
                 </select>
             </div>
 
-            <textarea name="user_input" class="input-section" placeholder="Enter your message" onkeydown="if(event.keyCode === 13) { event.preventDefault(); document.querySelector('button[type=submit]').click(); }"></textarea>
-            <button type="submit" class="btn btn-primary btn-lg" style="margin-top: 10px" id="add-to-vault-btn" disabled onclick="loading()">Summarize</button>
+            <div class="input-section">
+                <textarea name="user_input" placeholder="Enter your message" onkeydown="if(event.keyCode === 13) { event.preventDefault(); document.querySelector('button[type=submit]').click(); }"></textarea>
+                <button type="submit" class="btn btn-primary btn-lg" style="margin-top: 10px" id="add-to-vault-btn" disabled>Summarize</button>
+            </div>
         </form>
+
+        <div class="output-section">
+            <h3>Summary Output:</h3>
+            <div id="output"></div>
+        </div>
     </div>
 
     <script>
-        // Function to handle button click
-        function loading() {
-            // Add your custom logic here
-            alert("Button clicked!");
-        }
+        // Function to handle button click and trigger POST request
+        document.getElementById("summarize-form").addEventListener("submit", function(event) {
+            event.preventDefault();
+            var fileSelector = document.getElementById("file-selector");
+            var userTextInput = document.querySelector('textarea[name="user_input"]');
+
+            var formData = new FormData();
+            formData.append("file", fileSelector.value);
+            formData.append("user_input", userTextInput.value);
+
+            var addToVaultBtn = document.getElementById("add-to-vault-btn");
+
+            fetch("/summary", {
+                method: "POST",
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                // Render output on the page
+                var outputDiv = document.getElementById("output");
+                outputDiv.innerHTML = data.output;
+
+                // Clear selected file and disable button
+                fileSelector.selectedIndex = 0;
+                addToVaultBtn.disabled = true;
+            })
+            .catch(error => {
+                console.error("Error:", error);
+            });
+        });
 
         // Function to toggle the button state based on file selection
         function toggleButton() {

@@ -1,15 +1,16 @@
-import pandas as pd
 from flask import Flask, render_template, request
 import os
-from uuid import uuid4
 from langchain.document_loaders import PyPDFLoader
 from langchain.text_splitter import CharacterTextSplitter
+from langchain.chains.summarize import load_summarize_chain
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.vectorstores import Pinecone
-from langchain import VectorDBQA, OpenAI
+from langchain import OpenAI
+from langchain.chat_models import ChatOpenAI
+from langchain.chains import RetrievalQA
+from langchain.prompts import PromptTemplate
 import pinecone
-import embed
-import core_chat as cc
+import json
 
 app = Flask(__name__)
 chat_history = []
@@ -44,25 +45,14 @@ def upload():
         pdf_file_name = os.path.join(upload_folder, file_name)
         pdf_file.save(pdf_file_name)
 
-        # loader = PyPDFLoader(pdf_file_name)
-        # document = loader.load()
-        #
-        # text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
-        # texts = text_splitter.split_documents(document)
-        #
-        # embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get("OPENAI_API_KEY"))
-        # Pinecone.from_documents(texts, embeddings, index_name="my-knowledgebase")
+        loader = PyPDFLoader(pdf_file_name)
+        document = loader.load()
 
-        emd = embed.PDFEmbeddings(pdf_path=pdf_file_name, openai_key=os.environ.get("OPENAI_API_KEY"),
-                                  max_tokens=1600)
-        emd.create_text_chunks()
+        text_splitter = CharacterTextSplitter(chunk_size=1300, chunk_overlap=0)
+        texts = text_splitter.split_documents(document)
 
-        embedding_df = emd.create_embeddings_df()
-        previous_embedding_df = pd.read_csv("static/embeddings.csv")
-
-        combo_embedding_df = pd.concat([embedding_df, previous_embedding_df])
-        combo_embedding_df.drop_duplicates(keep='first', inplace=True)
-        combo_embedding_df.to_csv("static/embeddings.csv", index=False, escapechar='\\')
+        embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get("OPENAI_API_KEY"))
+        Pinecone.from_documents(texts, embeddings, index_name="my-knowledgebase")
 
         return render_template('upload.html')
     else:
@@ -77,10 +67,29 @@ def summary():
     # List to store file names
     files = []
 
-    # Loop through the files in the knowledge folder
-
     if request.method == 'POST':
-        print('test')
+        # Get the selected file and user input from the request
+
+        selected_file = request.form.get('file')
+        user_input = request.form.get('user_input')
+        file_path = os.path.join('knowledge', selected_file)
+
+        loader = PyPDFLoader(file_path)
+        data = loader.load()
+
+        text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
+        texts = text_splitter.split_documents(data)
+
+        prompt_template = user_input + "\n\n" + "{text}" + "\n\n"
+
+        prompt = PromptTemplate(template=prompt_template, input_variables=["text"])
+        chain = load_summarize_chain(OpenAI(temperature=0), chain_type="map_reduce", return_intermediate_steps=False,
+                                     map_prompt=prompt, combine_prompt=prompt)
+        overall_summary = chain({"input_documents": texts}, return_only_outputs=True)
+        output = overall_summary.get('output_text')
+
+        # Return the output as a JSON response
+        return json.dumps({'output': output})
     else:
         for filename in os.listdir(knowledge_folder):
             # Check if the item is a file
@@ -91,27 +100,18 @@ def summary():
 
 
 def process_input(user_input):
-    key = os.environ.get('OPENAI_API_KEY')
-    emd = embed.PDFEmbeddings(pdf_path="", openai_key=key,
-                              max_tokens=1600)
-    emd.embeddings_df = pd.read_csv("static/embeddings.csv")
-    model = 'gpt-3.5-turbo'
+    model = 'gpt-3.5-turbo-0613'
 
-    content_message = "Fullfil the users request or answer the question. The context section is provided to give you " \
-                      "more context and might not be needed to answer the question. "
-    top_results_strings, scores = emd.top_embeddings(user_input, 5)
-    gpt_message = cc.combo_query_string(user_input, top_results_strings, model, 1700)
-    answer = cc.ask_chat(key, gpt_message, content_message, .7, model)
+    embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get("OPENAI_API_KEY"))
+    docsearch = Pinecone.from_existing_index('my-knowledgebase', embeddings)
 
-    # embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get("OPENAI_API_KEY"))
-    # docsearch = Pinecone.from_existing_index('my-knowledgebase', embeddings)
-    # qa = VectorDBQA.from_chain_type(
-    #     llm=OpenAI(temperature=.7), chain_type="stuff", vectorstore=docsearch, return_source_documents=True, k=3
-    # )
-    # answer = qa({"query": user_input}).get('result')
-    #
+    qa = RetrievalQA.from_chain_type(llm=ChatOpenAI(model_name=model,temperature=.7),
+                                     chain_type="stuff", retriever=docsearch.as_retriever()
+                                     )
+    answer = qa({"query": user_input}).get('result')
+
     return f"Answer: {answer}"
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run()
