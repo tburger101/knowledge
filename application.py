@@ -100,7 +100,7 @@ def summary():
 
 
 def process_input(user_input):
-    model = 'gpt-3.5-turbo-0613'
+    model = 'gpt-3.5-turbo-16k'
 
     embeddings = OpenAIEmbeddings(openai_api_key=os.environ.get("OPENAI_API_KEY"))
     docsearch = Pinecone.from_existing_index('my-knowledgebase', embeddings)
